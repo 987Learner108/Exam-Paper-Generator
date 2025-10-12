@@ -66,7 +66,7 @@ A full-stack AI-powered exam paper generation system with multi-agent workflows,
 3. **Configure the service:**
    - **Name**: `exam-paper-generator-backend`
    - **Runtime**: `Python 3`
-   - **Build Command**: `pip install -r requirements.txt`
+   - **Build Command**: `pip install --no-build-isolation -r requirements.txt`
    - **Start Command**: `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
 4. **Add Environment Variables:**
@@ -210,9 +210,14 @@ The application uses MongoDB Atlas. Key collections:
 - **Performance**: Use Render's built-in monitoring
 - **Errors**: Implement proper error tracking
 
-## 🔄 CI/CD
+## 🚀 Deployment
 
-The application is configured for automatic deployment on Render when code is pushed to the main branch.
+**Run the deployment script:**
+```cmd
+deploy.bat
+```
+
+**Then follow the step-by-step guide above to complete your deployment!** 🚀📚
 
 ## 📝 License
 
