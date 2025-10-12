@@ -3,12 +3,13 @@ services:
   - type: web
     name: exam-paper-generator-backend
     env: python
-    buildCommand: "pip install --no-build-isolation --no-deps --only-binary=all --force-reinstall --no-cache-dir --no-warn-script-location --prefer-binary -r requirements.txt"
+    buildCommand: "pip install --no-cache-dir -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: "/health"
     autoDeploy: false
     plan: free
     regions: ["oregon"]
+    runtime: python-3.10.9
     disk:
       name: exam-paper-generator-data
       mountPath: /opt/render/project/src
@@ -46,4 +47,3 @@ services:
 # EMAIL_HOST_USER=your_email@gmail.com
 # EMAIL_HOST_PASSWORD=your_app_password
 # FRONTEND_ALLOWED_ORIGINS=https://exam-paper-generator-frontend.onrender.com,https://exam-paper-generator-backend.onrender.com
-# PYTHON_VERSION=3.11
