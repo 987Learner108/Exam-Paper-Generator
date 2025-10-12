@@ -1,0 +1,38 @@
+services:
+  - type: web
+    name: exam-generator-frontend
+    runtime: node
+    buildCommand: cd frontend && npm install && npm run build
+    startCommand: cd frontend && npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+    autoDeploy: false
+
+  - type: web
+    name: exam-generator-backend
+    runtime: python
+    buildCommand: cd backend && pip install -r requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: mongodb
+          property: connectionString
+      - key: GEMINI_API_KEY
+        generateValue: true
+      - key: SECRET_KEY
+        generateValue: true
+      - key: MONGODB_URL
+        fromService:
+          type: pserv
+          name: mongodb
+          property: connectionString
+      - key: CORS_ORIGINS
+        value: "https://exam-generator-frontend.onrender.com"
+    autoDeploy: false
+
+  - type: pserv
+    name: mongodb
+    ipAllowList: []
