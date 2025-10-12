@@ -34,10 +34,5 @@
     "EMAIL_HOST_USER": "@email-host-user",
     "EMAIL_HOST_PASSWORD": "@email-host-password",
     "FRONTEND_ALLOWED_ORIGINS": "@frontend-allowed-origins"
-  },
-  "functions": {
-    "api/main.py": {
-      "runtime": "python3.10"
-    }
   }
 }
