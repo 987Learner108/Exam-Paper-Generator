@@ -50,7 +50,7 @@ SMTP_PASSWORD=your-app-password
    - Click "New+" → "Web Service"
    - Connect your GitHub repo
    - **Name:** `exam-generator-backend`
-   - **Runtime:** `Python 3`
+   - **Runtime:** `Python 3.13.4`
    - **Build Command:** `pip install -r requirements.txt`
    - **Start Command:** `uvicorn app.main:app --host 0.0.0.0 --port $PORT`
 
@@ -114,7 +114,7 @@ services:
   - type: web
     name: exam-generator-backend
     runtime: python
-    buildCommand: cd backend && pip install -r requirements.txt
+    buildCommand: pip install -r requirements.txt
     startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: DATABASE_URL
