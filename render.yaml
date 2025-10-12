@@ -9,6 +9,7 @@ services:
     autoDeploy: false
     plan: free
     regions: ["oregon"]
+    runtime: python-3.11
     disk:
       name: exam-paper-generator-data
       mountPath: /opt/render/project/src
@@ -24,6 +25,7 @@ services:
     autoDeploy: false
     plan: free
     regions: ["oregon"]
+    runtime: node-18
     headers:
       - path: /*
         name: Cache-Control
