@@ -1,0 +1,45 @@
+# Core Framework
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+python-multipart==0.0.9
+
+# Database
+motor==3.5.1
+pymongo==4.8.0
+beanie==1.26.0
+
+# Authentication & Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.2.0
+pydantic[email]==2.8.2
+
+# AI & LangChain (Python 3.13+ compatible)
+langchain==0.2.16
+langchain-core==0.2.38
+langchain-google-genai==2.0.0
+langchain-community==0.2.16
+langgraph==0.2.14
+langsmith==0.1.108
+google-generativeai==0.8.3
+sentence-transformers==3.0.1
+faiss-cpu==1.8.0
+
+# File Processing
+PyMuPDF==1.24.9
+python-docx==1.1.2
+python-pptx==1.0.2
+Pillow==10.4.0
+pytesseract==0.3.13
+
+# PDF Generation
+reportlab==4.2.2
+fpdf2==2.7.9
+
+# Email
+fastapi-mail==1.4.1
+
+# Utilities
+python-dotenv==1.0.0
+pydantic-settings==2.4.0
+aiofiles==24.1.0
