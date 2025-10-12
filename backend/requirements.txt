@@ -1,47 +1,40 @@
-# Core Framework - Python 3.11 compatible versions
+# Core Framework - Minimal dependencies for deployment
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-multipart==0.0.6
 
-# Database - Stable versions for Python 3.11
+# Database - Essential only
 motor==3.3.2
 pymongo==4.6.1
 beanie==1.24.0
 
-# Authentication & Security - Compatible with Python 3.11
+# Authentication & Security - Required for auth
 python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 pydantic[email]==2.5.3
 
-# AI & LangChain - Conservative versions for Python 3.11 compatibility
+# AI & LangChain - Core functionality only
 langchain==0.1.20
 langchain-core==0.1.52
 langchain-google-genai==1.0.1
-langchain-community==0.0.38
-langgraph==0.0.32
-langsmith==0.1.54
 google-generativeai==0.4.1
-sentence-transformers==2.3.1
-faiss-cpu==1.8.0
 
-# File Processing - Versions that work with Python 3.11
-PyMuPDF==1.23.26
+# File Processing - Basic functionality
 python-docx==1.1.0
 python-pptx==0.6.23
 Pillow==10.2.0
 
-# PDF Generation - Stable versions
+# PDF Generation - Using ReportLab only (no PyMuPDF)
 reportlab==4.0.9
-fpdf2==2.7.7
 
-# Email - Compatible version
+# Email - Required for notifications
 fastapi-mail==1.4.1
 
-# Cloud Storage - Stable version
+# Cloud Storage - Required for file uploads
 cloudinary==1.41.0
 
-# Utilities - Python 3.11 compatible
+# Utilities - Essential utilities
 python-dotenv==1.0.0
 pydantic-settings==2.1.0
 aiofiles==23.2.1
