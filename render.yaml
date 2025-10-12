@@ -3,7 +3,7 @@ services:
   - type: web
     name: exam-paper-generator-backend
     env: python
-    buildCommand: "python3.11 --version 2>/dev/null || python3 --version && pip install --no-build-isolation --no-deps --only-binary=all --force-reinstall -r requirements.txt"
+    buildCommand: "python3.11 --version 2>/dev/null || python3 --version && pip install --no-build-isolation --no-deps --only-binary=all --force-reinstall --no-cache-dir -r requirements.txt"
     startCommand: "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     healthCheckPath: "/health"
     autoDeploy: false

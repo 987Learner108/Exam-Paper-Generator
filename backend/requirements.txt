@@ -23,9 +23,8 @@ google-generativeai==0.4.1
 # File Processing - Basic functionality
 python-docx==1.1.0
 python-pptx==0.6.23
-Pillow==10.2.0
 
-# PDF Generation - Using ReportLab only (no PyMuPDF)
+# PDF Generation - Using ReportLab only
 reportlab==4.0.9
 
 # Email - Required for notifications
