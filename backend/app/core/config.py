@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Intelligent Exam Paper Generator"
     BACKEND_URL: str = "http://127.0.0.1:8000"
     FRONTEND_URL: str = "http://localhost:5173"
+    FRONTEND_ALLOWED_ORIGINS: list = ["http://localhost:5173", "http://localhost:3000"]
     
     # File Upload
     MAX_FILE_SIZE: int = 10485760  # 10MB (in bytes)

@@ -61,7 +61,7 @@ class EmbeddingService:
     def check_similarity(
         self, 
         question_text: str, 
-        threshold: float = 0.85,
+        threshold: float = 0.90,
         k: int = 5
     ) -> Tuple[bool, List[Tuple[str, float]]]:
         """Check if a similar question exists

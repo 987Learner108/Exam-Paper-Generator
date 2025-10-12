@@ -8,6 +8,7 @@ from app.core.config import settings
 from app.core.database import get_database
 from app.services.embedding_service import embedding_service
 import json
+from datetime import datetime
 
 
 # State definition for the workflow
@@ -31,6 +32,11 @@ class PaperGenerationState(TypedDict):
     current_step: str
     retry_count: int
     errors: List[str]
+    
+    # History tracking
+    generation_history: List[Dict]
+    rejected_questions: List[Dict]
+    regeneration_feedback: str
 
 
 class LangGraphPaperGenerator:
@@ -249,12 +255,14 @@ class LangGraphPaperGenerator:
             print(f"Number of Questions: {len(marks_distribution)}")
             print(f"Marks Distribution: {marks_distribution}")
             print(f"Teacher's Prompt: {state.get('prompt', '')[:200]}...")
+            print(f"Retry Count: {state.get('retry_count', 0)}")
             print(f"{'='*60}\n")
             
             # Check if this is a regeneration
             is_regeneration = "REGENERATION" in state.get("prompt", "").upper()
             if is_regeneration:
                 print(f"🔄 REGENERATION MODE: Maintaining strict requirements from original prompt")
+                print(f"   Previous errors: {state.get('errors', [])}")
             
             # Parse prompt for question types
             prompt_lower = state.get("prompt", "").lower()
@@ -549,6 +557,17 @@ class LangGraphPaperGenerator:
                 state["generated_questions"] = self._create_fallback_questions(state)
                 state["current_step"] = "verification"
             
+            # Add to generation history
+            generation_record = {
+                "timestamp": str(datetime.now()),
+                "attempt": state.get("retry_count", 0),
+                "questions_generated": len(questions) if 'questions' in locals() else 0,
+                "marks_generated": sum(q.get("marks", 0) for q in questions) if 'questions' in locals() else 0,
+                "success": len(state["generated_questions"]) > 0,
+                "error": str(e) if 'e' in locals() else None
+            }
+            state["generation_history"].append(generation_record)
+            
             return state
         
         except Exception as e:
@@ -569,10 +588,28 @@ class LangGraphPaperGenerator:
             questions = state["generated_questions"]
             verified = []
             
+            print(f"\n{'='*60}")
+            print(f"🔍 VERIFICATION PHASE")
+            print(f"{'='*60}")
+            print(f"Input questions: {len(questions)}")
+            print(f"Regeneration attempt: {state.get('retry_count', 0)}")
+            
             # Check each question
-            for q in questions:
+            for i, q in enumerate(questions, 1):
+                print(f"\n🔎 Checking Question {i}/{len(questions)}:")
+                print(f"   Text: {q.get('question_text', '')[:100]}...")
+                print(f"   Type: {q.get('question_type')}, Marks: {q.get('marks')}")
+                
                 # Validate required fields
                 if not all(k in q for k in ["question_text", "blooms_level", "question_type", "marks", "answer_key"]):
+                    print(f"   ❌ Missing required fields")
+                    # Add to rejected questions history
+                    state["rejected_questions"].append({
+                        "question": q,
+                        "reason": "Missing required fields",
+                        "timestamp": str(datetime.now()),
+                        "attempt": state.get("retry_count", 0)
+                    })
                     continue
                 
                 # Check for duplicates using semantic similarity
@@ -580,6 +617,16 @@ class LangGraphPaperGenerator:
                 
                 if not is_duplicate:
                     verified.append(q)
+                    print(f"   ✅ Question accepted")
+                else:
+                    print(f"   ❌ Question rejected (duplicate)")
+                    # Add to rejected questions history
+                    state["rejected_questions"].append({
+                        "question": q,
+                        "reason": "Duplicate detected",
+                        "timestamp": str(datetime.now()),
+                        "attempt": state.get("retry_count", 0)
+                    })
             
             # Check question count and marks
             total_verified_marks = sum(q["marks"] for q in verified)
@@ -591,21 +638,30 @@ class LangGraphPaperGenerator:
             question_count_match = re.search(r'(\d+)\s*(?:questions?|mcqs?)', prompt_lower)
             expected_count = int(question_count_match.group(1)) if question_count_match else None
             
-            print(f"📊 Verification: {len(verified)} questions, {total_verified_marks}/{required_marks} marks")
-            if expected_count:
-                print(f"📊 Expected count from prompt: {expected_count}")
+            print(f"\n📊 Verification Results:")
+            print(f"   Verified questions: {len(verified)}")
+            print(f"   Verified marks: {total_verified_marks}")
+            print(f"   Required marks: {required_marks}")
+            print(f"   Expected count: {expected_count}")
+            print(f"   Marks match: {total_verified_marks == required_marks}")
+            print(f"   Count match: {expected_count is None or len(verified) == expected_count}")
             
             # Check if we have exact count (if specified in prompt)
             count_mismatch = expected_count and len(verified) != expected_count
             
             # If we don't have exact marks, try to adjust
             if total_verified_marks != required_marks or count_mismatch:
+                print(f"🔧 Adjusting questions to meet requirements...")
                 verified = self._adjust_questions_to_marks(verified, required_marks)
                 total_verified_marks = sum(q["marks"] for q in verified)
             
             # ULTRA STRICT validation: EXACT match required (no tolerance)
             marks_ok = total_verified_marks == required_marks
             count_ok = not expected_count or len(verified) == expected_count
+            
+            print(f"\n🎯 Final Validation:")
+            print(f"   Marks OK: {marks_ok}")
+            print(f"   Count OK: {count_ok}")
             
             if not marks_ok or not count_ok:
                 state["retry_count"] += 1
@@ -614,6 +670,16 @@ class LangGraphPaperGenerator:
                     print(f"   Expected: {expected_count or 'N/A'} questions, {required_marks} marks")
                     print(f"   Got: {len(verified)} questions, {total_verified_marks} marks")
                     print(f"   Retry attempt {state['retry_count']}/5...")
+                    
+                    # Add to history
+                    state["generation_history"].append({
+                        "timestamp": str(datetime.now()),
+                        "attempt": state["retry_count"] - 1,
+                        "phase": "verification_failed",
+                        "reason": f"Marks mismatch: {total_verified_marks}/{required_marks}, Count mismatch: {len(verified)}/{expected_count}",
+                        "retry_triggered": True
+                    })
+                    
                     state["current_step"] = "question_generation"
                 else:
                     # After 5 retries, force correct it
@@ -655,6 +721,17 @@ class LangGraphPaperGenerator:
                 "questions": questions,
                 "blooms_distribution": blooms_dist
             }
+            
+            # Add completion to history
+            state["generation_history"].append({
+                "timestamp": str(datetime.now()),
+                "phase": "completed",
+                "questions_final": len(questions),
+                "marks_final": sum(q["marks"] for q in questions),
+                "success": True,
+                "total_retries": state.get("retry_count", 0),
+                "total_rejected": len(state.get("rejected_questions", []))
+            })
             
             state["current_step"] = "complete"
             
@@ -1028,20 +1105,25 @@ class LangGraphPaperGenerator:
     async def _check_duplicate(self, question_text: str, teacher_id: str) -> bool:
         """Check if question is duplicate using FAISS semantic similarity"""
         try:
-            # Use FAISS to check semantic similarity
+            print(f"\n🔍 Checking for duplicates for question: {question_text[:50]}...")
+            
+            # Use FAISS to check semantic similarity with higher threshold
             is_similar, similar_questions = embedding_service.check_similarity(
                 question_text, 
-                threshold=0.85,  # 85% similarity threshold
+                threshold=0.90,  # Increased from 0.85 for stricter detection
                 k=5
             )
             
             if is_similar:
-                print(f"⚠️  Similar question found: {similar_questions[0][0]} (similarity: {similar_questions[0][1]:.2f})")
+                print(f"⚠️  DUPLICATE DETECTED: {len(similar_questions)} similar questions found")
+                for i, (qid, similarity) in enumerate(similar_questions[:3], 1):
+                    print(f"   {i}. {qid}: {similarity:.3f} similarity")
                 return True
             
+            print(f"✅ Question is unique (no similar questions found)")
             return False
         except Exception as e:
-            print(f"Error checking duplicate: {e}")
+            print(f"❌ Error checking duplicate: {e}")
             return False
     
     def _create_fallback_questions(self, state: PaperGenerationState) -> List[Dict]:
@@ -1137,14 +1219,68 @@ class LangGraphPaperGenerator:
             "final_paper": {},
             "current_step": "rqg",
             "retry_count": 0,
-            "errors": []
+            "errors": [],
+            "generation_history": [],
+            "rejected_questions": [],
+            "regeneration_feedback": ""
         }
         
         # Build and run workflow
         graph = self.build_graph()
         final_state = await graph.ainvoke(initial_state)
         
+        # Print generation summary for debugging
+        self.print_generation_summary(final_state)
+        
         return final_state
+    
+    def get_generation_history(self, state: PaperGenerationState) -> Dict:
+        """Get comprehensive generation history for debugging"""
+        history = {
+            "total_attempts": len(state.get("generation_history", [])),
+            "total_retries": state.get("retry_count", 0),
+            "total_rejected": len(state.get("rejected_questions", [])),
+            "errors": state.get("errors", []),
+            "timeline": state.get("generation_history", []),
+            "summary": {
+                "success": state.get("current_step") == "complete",
+                "final_questions": len(state.get("verified_questions", [])),
+                "final_marks": sum(q.get("marks", 0) for q in state.get("verified_questions", []))
+            }
+        }
+        return history
+    
+    def print_generation_summary(self, state: PaperGenerationState):
+        """Print a comprehensive summary of the generation process"""
+        history = self.get_generation_history(state)
+        
+        print(f"\n{'='*80}")
+        print(f"📊 GENERATION PROCESS SUMMARY")
+        print(f"{'='*80}")
+        
+        print(f"Status: {'✅ SUCCESS' if history['summary']['success'] else '❌ FAILED'}")
+        print(f"Total Attempts: {history['total_attempts']}")
+        print(f"Total Retries: {history['total_retries']}")
+        print(f"Questions Rejected: {history['total_rejected']}")
+        
+        if history['summary']['success']:
+            print(f"Final Questions: {history['summary']['final_questions']}")
+            print(f"Final Marks: {history['summary']['final_marks']}")
+        
+        print(f"\n📋 Timeline:")
+        for i, event in enumerate(history['timeline'], 1):
+            print(f"  {i}. [{event.get('timestamp', 'Unknown')}] {event.get('phase', 'Unknown')}")
+            if event.get('questions_generated'):
+                print(f"     Generated: {event['questions_generated']} questions")
+            if event.get('retry_triggered'):
+                print(f"     Retry triggered: {event.get('reason', 'Unknown')}")
+        
+        if history['errors']:
+            print(f"\n❌ Errors Encountered:")
+            for error in history['errors']:
+                print(f"  - {error}")
+        
+        print(f"{'='*80}\n")
 
 
 # Singleton instance
