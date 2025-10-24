@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.auth import LoginRequest, LoginResponse, CreateUserRequest
 from app.core.auth import verify_password, create_access_token, get_password_hash, get_current_user
 from app.core.database import get_database
-from app.services.mail_service import mail_service
 from datetime import datetime, timedelta
 from bson import ObjectId
 import secrets
@@ -97,17 +96,11 @@ async def forgot_password(email: str):
         }
     )
     
-    # Send reset email
-    try:
-        await mail_service.send_password_reset_link(
-            user["email"],
-            user["full_name"],
-            reset_token
-        )
-    except Exception as e:
-        print(f"Failed to send reset email: {e}")
-    
-    return {"message": "If the email exists, a reset link has been sent"}
+    return {
+        "message": "Reset token generated",
+        "token": reset_token,  # Return token directly since we can't email it
+        "expires": reset_expires.isoformat()
+    }
 
 
 @router.post("/reset-password")

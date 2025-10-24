@@ -234,3 +234,11 @@ For issues or questions:
 ---
 
 **Happy Deploying! 🎉**
+*hello*
+__i am dinesh__
+## hello
+# Heading 1
+## Heading 2
+### Heading 3
+#### Heading 4
+~~strikethrough text~~

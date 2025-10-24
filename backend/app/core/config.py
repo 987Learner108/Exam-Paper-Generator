@@ -32,16 +32,15 @@ class Settings(BaseSettings):
     def SECRET_KEY(self) -> str:
         return self.JWT_SECRET
     
-    # Email
-    EMAIL_USER: str
-    EMAIL_PASS: str
-    EMAIL_FROM: str
-    
     # Application
     APP_NAME: str = "Intelligent Exam Paper Generator"
     BACKEND_URL: str = "http://127.0.0.1:8000"
     FRONTEND_URL: str = "http://localhost:5173"
-    FRONTEND_ALLOWED_ORIGINS: list = ["http://localhost:5173", "http://localhost:3000"]
+    FRONTEND_ALLOWED_ORIGINS: str = "http://localhost:5173,http://localhost:3000"
+    
+    @property
+    def CORS_ORIGINS(self) -> list[str]:
+        return self.FRONTEND_ALLOWED_ORIGINS.split(",")
     
     # File Upload
     MAX_FILE_SIZE: int = 10485760  # 10MB (in bytes)

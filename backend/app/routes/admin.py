@@ -2,7 +2,6 @@ from fastapi import APIRouter, HTTPException, Depends
 from app.schemas.auth import CreateUserRequest, UpdateUserRequest, ResetPasswordRequest
 from app.core.auth import require_admin, get_password_hash
 from app.core.database import get_database
-from app.services.mail_service import mail_service
 from bson import ObjectId
 from datetime import datetime
 import secrets
@@ -41,16 +40,6 @@ async def create_user(
     }
     
     result = await db.users.insert_one(user_data)
-    
-    # Send welcome email
-    try:
-        await mail_service.send_welcome_email(
-            request.email,
-            request.full_name,
-            request.password
-        )
-    except Exception as e:
-        print(f"Failed to send email: {e}")
     
     return {
         "id": str(result.inserted_id),
@@ -188,17 +177,10 @@ async def reset_password(
         {"$set": {"hashed_password": get_password_hash(new_password)}}
     )
     
-    # Send email
-    try:
-        await mail_service.send_password_reset(
-            user["email"],
-            user["full_name"],
-            new_password
-        )
-    except Exception as e:
-        print(f"Failed to send email: {e}")
-    
-    return {"message": "Password reset successfully"}
+    return {
+        "message": "Password reset successfully",
+        "new_password": new_password  # Return new password since we can't email it
+    }
 
 
 @router.get("/analytics")

@@ -11,13 +11,29 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# CORS middleware
+# CORS middleware configuration
+origins = [
+    "http://localhost:5173",    # Vite dev server
+    "http://localhost:3000",    # Alternative local development
+    "http://127.0.0.1:5173",   # Alternative local address
+    "http://127.0.0.1:3000",   # Alternative local address
+    "https://exam-paper-generator-frontend.onrender.com",  # Production frontend
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.FRONTEND_ALLOWED_ORIGINS,
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+    ],
+    expose_headers=["Content-Type", "Authorization"],
+    max_age=3600,
 )
 
 # Startup event

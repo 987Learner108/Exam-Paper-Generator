@@ -11,12 +11,19 @@ from typing import Dict, Optional
 import os
 
 # Configure Cloudinary
-cloudinary.config(
-    cloud_name=settings.CLOUDINARY_CLOUD_NAME,
-    api_key=settings.CLOUDINARY_API_KEY,
-    api_secret=settings.CLOUDINARY_API_SECRET,
-    secure=True
-)
+try:
+    cloudinary.config(
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
+        secure=True
+    )
+    print(f"✅ Cloudinary configured successfully")
+    print(f"   Cloud name: {settings.CLOUDINARY_CLOUD_NAME}")
+    print(f"   API key: {settings.CLOUDINARY_API_KEY[:10]}...")  # Only show first 10 chars
+except Exception as e:
+    print(f"❌ Cloudinary configuration failed: {e}")
+    raise
 
 
 class CloudinaryService:

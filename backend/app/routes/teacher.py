@@ -4,17 +4,350 @@ from app.core.database import get_database, get_gridfs
 from app.services.file_parser import FileParser
 from app.services.langgraph_flow import paper_generator
 from app.services.pdf_generator import PDFGenerator
-from app.services.mail_service import mail_service
 from app.services.embedding_service import embedding_service
 from app.services.cloudinary_service import cloudinary_service
+from app.services.summarizer_service import SummarizerService
 from app.schemas.paper import GeneratePaperRequest, ApprovePaperRequest, RegeneratePaperRequest, EditApprovedPaperRequest, UpdatePaperMetadataRequest
+from app.services.advanced_paper_generator import AdvancedPaperGenerator
 from bson import ObjectId
 from datetime import datetime
+from typing import List
 import os
 import aiofiles
 from app.core.config import settings
 
+def format_datetime(dt):
+    """Helper function to format datetime objects or strings consistently"""
+    if isinstance(dt, str):
+        try:
+            dt = datetime.strptime(dt, "%Y-%m-%dT%H:%M:%S.%f")
+        except ValueError:
+            try:
+                dt = datetime.strptime(dt, "%Y-%m-%dT%H:%M:%S")
+            except ValueError:
+                return None
+    return dt.strftime("%Y-%m-%d %H:%M:%S") if dt else None
+
+def analyze_specific_paper(paper):
+    """Analyze a specific paper in detail"""
+    analysis = {
+        "paper_stats": {
+            "total_marks": paper.get("total_marks", 0),
+            "question_count": len(paper.get("questions", [])),
+            "average_marks_per_question": round(paper.get("total_marks", 0) / len(paper.get("questions", [])), 2) if paper.get("questions") else 0,
+            "created_at": format_datetime(paper.get("created_at")),
+            "last_modified": format_datetime(paper.get("updated_at")),
+        },
+        "question_analysis": [],
+        "balance_metrics": {},
+        "recommendations": []
+    }
+    
+    questions = paper.get("questions", [])
+    blooms_levels = {}
+    difficulty_levels = {}
+    question_types = {}
+    
+    for q in questions:
+        # Collect question stats
+        blooms = q.get("blooms_level", "Unknown")
+        difficulty = q.get("difficulty", "Medium")
+        q_type = q.get("question_type", "Unknown")
+        
+        blooms_levels[blooms] = blooms_levels.get(blooms, 0) + 1
+        difficulty_levels[difficulty] = difficulty_levels.get(difficulty, 0) + 1
+        question_types[q_type] = question_types.get(q_type, 0) + 1
+        
+        # Detailed question analysis
+        analysis["question_analysis"].append({
+            "type": q_type,
+            "blooms_level": blooms,
+            "difficulty": difficulty,
+            "marks": q.get("marks", 0),
+            "topics": q.get("topics", []),
+            "learning_outcomes": q.get("learning_outcomes", [])
+        })
+    
+    # Calculate balance metrics
+    total_questions = len(questions)
+    if total_questions > 0:
+        analysis["balance_metrics"] = {
+            "blooms_distribution": {k: round(v/total_questions * 100, 1) for k, v in blooms_levels.items()},
+            "difficulty_distribution": {k: round(v/total_questions * 100, 1) for k, v in difficulty_levels.items()},
+            "question_type_distribution": {k: round(v/total_questions * 100, 1) for k, v in question_types.items()}
+        }
+    
+    # Generate paper-specific recommendations
+    if analysis["balance_metrics"].get("difficulty_distribution", {}).get("Hard", 0) > 40:
+        analysis["recommendations"].append("Consider reducing the proportion of hard questions")
+    if len(question_types) < 3:
+        analysis["recommendations"].append("Try to include more variety in question types")
+    
+    return analysis
+
 router = APIRouter(prefix="/teacher", tags=["Teacher"])
+
+
+@router.get("/approved-papers-summary")
+async def get_approved_papers_summary(
+    subject: str = None,
+    custom_prompt: str = None,
+    paper_id: str = None,
+    current_user: dict = Depends(require_teacher)
+):
+    """Get a detailed summary of approved papers statistics, analytics, and custom analysis"""
+    try:
+        db = get_database()
+        
+        # Build query
+        query = {
+            "status": "approved",
+            "teacher_id": str(current_user["user_id"])
+        }
+        
+        # Add subject filter if provided
+        if subject:
+            query["subject"] = {"$regex": subject, "$options": "i"}
+            
+        # Fetch papers
+        papers = await db.papers.find(query).to_list(length=None)
+        
+        if not papers:
+            return {
+                "total_papers": 0,
+                "total_questions": 0,
+                "subject_distribution": {},
+                "department_distribution": {},
+                "question_type_distribution": {},
+                "blooms_level_distribution": {},
+                "average_marks": 0
+            }
+        
+        # Initialize counters
+        subject_dist = {}
+        dept_dist = {}
+        type_dist = {}
+        blooms_dist = {}
+        total_questions = 0
+        total_marks = 0
+        
+        # Initialize advanced analytics
+        mark_dist = {}
+        time_trend = {}
+        difficulty_levels = {}
+        topic_coverage = {}
+        chapter_coverage = {}
+        learning_outcomes = {}
+        
+        # Calculate distributions and advanced metrics
+        for paper in papers:
+            # Subject and Department
+            subj = paper.get("subject", "Unknown")
+            dept = paper.get("department", "Unknown")
+            subject_dist[subj] = subject_dist.get(subj, 0) + 1
+            dept_dist[dept] = dept_dist.get(dept, 0) + 1
+            
+            # Questions analysis
+            questions = paper.get("questions", [])
+            total_questions += len(questions)
+            paper_marks = paper.get("total_marks", 0)
+            total_marks += paper_marks
+            
+            # Mark distribution analysis
+            mark_range = f"{(paper_marks // 10) * 10}-{((paper_marks // 10) + 1) * 10}"
+            mark_dist[mark_range] = mark_dist.get(mark_range, 0) + 1
+            
+            # Time trend analysis
+            created_date = paper.get("created_at")
+            if created_date:
+                # Handle both string and datetime objects
+                if isinstance(created_date, str):
+                    try:
+                        date_obj = datetime.strptime(created_date, "%Y-%m-%dT%H:%M:%S.%f")
+                    except ValueError:
+                        try:
+                            date_obj = datetime.strptime(created_date, "%Y-%m-%dT%H:%M:%S")
+                        except ValueError:
+                            date_obj = datetime.now()  # fallback
+                else:
+                    date_obj = created_date
+                
+                month_year = date_obj.strftime("%Y-%m")
+                time_trend[month_year] = time_trend.get(month_year, 0) + 1
+            
+            for q in questions:
+                # Basic question analysis
+                q_type = q.get("question_type", "Unknown")
+                blooms = q.get("blooms_level", "Unknown")
+                type_dist[q_type] = type_dist.get(q_type, 0) + 1
+                blooms_dist[blooms] = blooms_dist.get(blooms, 0) + 1
+                
+                # Difficulty level analysis
+                difficulty = q.get("difficulty", "Medium")
+                difficulty_levels[difficulty] = difficulty_levels.get(difficulty, 0) + 1
+                
+                # Topic and chapter coverage
+                topic = q.get("topic", "Unknown")
+                chapter = q.get("chapter", "Unknown")
+                topic_coverage[topic] = topic_coverage.get(topic, 0) + 1
+                chapter_coverage[chapter] = chapter_coverage.get(chapter, 0) + 1
+                
+                # Learning outcomes analysis
+                outcomes = q.get("learning_outcomes", [])
+                for outcome in outcomes:
+                    learning_outcomes[outcome] = learning_outcomes.get(outcome, 0) + 1
+        
+        # Generate comprehensive insights and suggestions
+        insights = []
+        suggestions = []
+        detailed_analysis = {}
+        
+        # Paper trend analysis
+        if time_trend:
+            sorted_trends = sorted(time_trend.items())
+            recent_months = sorted_trends[-3:]  # Last 3 months
+            trend_changes = []
+            for i in range(1, len(recent_months)):
+                prev_count = recent_months[i-1][1]
+                curr_count = recent_months[i][1]
+                change = ((curr_count - prev_count) / prev_count) * 100 if prev_count > 0 else 0
+                trend_changes.append(change)
+            
+            if trend_changes:
+                avg_change = sum(trend_changes) / len(trend_changes)
+                if avg_change > 20:
+                    insights.append(f"Paper generation has increased by {round(avg_change)}% in recent months")
+                elif avg_change < -20:
+                    insights.append(f"Paper generation has decreased by {abs(round(avg_change))}% in recent months")
+
+        # Question type analysis
+        if type_dist:
+            most_common_type = max(type_dist.items(), key=lambda x: x[1])[0]
+            least_common_type = min(type_dist.items(), key=lambda x: x[1])[0]
+            total_types = sum(type_dist.values())
+            type_percentages = {k: (v/total_types)*100 for k, v in type_dist.items()}
+            
+            insights.append(f"Most frequently used question type is '{most_common_type}' ({round(type_percentages[most_common_type])}%)")
+            if len(type_dist) < 4:
+                suggestions.append("Consider diversifying question types to assess different skills")
+            
+            # Check for balance
+            if any(p > 40 for p in type_percentages.values()):
+                suggestions.append("Try to maintain a more balanced distribution of question types")
+
+        # Analyze Bloom's taxonomy distribution
+        if blooms_dist:
+            lower_order = sum(blooms_dist.get(level, 0) for level in ['Remember', 'Understand', 'Apply'])
+            higher_order = sum(blooms_dist.get(level, 0) for level in ['Analyze', 'Evaluate', 'Create'])
+            if higher_order < lower_order * 0.3:  # If less than 30% higher-order questions
+                suggestions.append("Consider including more higher-order thinking questions (Analyze, Evaluate, Create)")
+            
+        # Subject coverage analysis
+        if subject_dist:
+            avg_questions_per_subject = total_questions / len(subject_dist)
+            subjects_below_avg = [subj for subj, count in subject_dist.items() if count < avg_questions_per_subject]
+            if subjects_below_avg:
+                suggestions.append(f"Consider creating more papers for: {', '.join(subjects_below_avg)}")
+
+        # Department coverage analysis
+        if dept_dist:
+            less_covered_depts = [dept for dept, count in dept_dist.items() if count < len(papers) * 0.2]
+            if less_covered_depts:
+                suggestions.append(f"Departments needing more coverage: {', '.join(less_covered_depts)}")
+
+        # Question distribution analysis
+        avg_questions_per_paper = total_questions / len(papers) if papers else 0
+        if avg_questions_per_paper:
+            insights.append(f"Average questions per paper: {round(avg_questions_per_paper, 1)}")
+            if any(len(paper.get('questions', [])) < avg_questions_per_paper * 0.7 for paper in papers):
+                suggestions.append("Some papers have significantly fewer questions than average")
+
+        # Custom prompt analysis
+        if custom_prompt and papers:
+            try:
+                from app.services.summarizer_service import analyze_papers_with_prompt
+                custom_analysis = await analyze_papers_with_prompt(papers, custom_prompt)
+                detailed_analysis["custom_analysis"] = custom_analysis
+            except Exception as e:
+                print(f"Error in custom analysis: {str(e)}")
+
+        # Detailed topic and chapter analysis
+        if topic_coverage:
+            less_covered_topics = [topic for topic, count in topic_coverage.items() 
+                                 if count < (sum(topic_coverage.values()) / len(topic_coverage)) * 0.5]
+            if less_covered_topics:
+                suggestions.append(f"Consider increasing coverage of topics: {', '.join(less_covered_topics)}")
+
+        # Learning outcomes analysis
+        if learning_outcomes:
+            top_outcomes = sorted(learning_outcomes.items(), key=lambda x: x[1], reverse=True)[:3]
+            insights.append(f"Top assessed learning outcomes: {', '.join(o[0] for o in top_outcomes)}")
+
+        # Difficulty level distribution
+        if difficulty_levels:
+            diff_total = sum(difficulty_levels.values())
+            diff_percentages = {k: (v/diff_total)*100 for k, v in difficulty_levels.items()}
+            
+            ideal_distribution = {"Easy": 30, "Medium": 40, "Hard": 30}
+            for level, ideal_pct in ideal_distribution.items():
+                actual_pct = diff_percentages.get(level, 0)
+                if abs(actual_pct - ideal_pct) > 15:
+                    suggestions.append(
+                        f"Adjust {level} questions from {round(actual_pct)}% towards {ideal_pct}% for better balance"
+                    )
+
+        # Specific paper analysis
+        if paper_id:
+            specific_paper = next((p for p in papers if str(p.get("_id")) == paper_id), None)
+            if specific_paper:
+                detailed_analysis["specific_paper"] = analyze_specific_paper(specific_paper)
+
+        return {
+            "total_papers": len(papers),
+            "total_questions": total_questions,
+            "subject_distribution": subject_dist,
+            "department_distribution": dept_dist,
+            "question_type_distribution": type_dist,
+            "blooms_level_distribution": blooms_dist,
+            "average_marks": round(total_marks / len(papers), 2) if papers else 0,
+            "mark_distribution": mark_dist,
+            "time_trend": time_trend,
+            "difficulty_distribution": difficulty_levels,
+            "topic_coverage": topic_coverage,
+            "chapter_coverage": chapter_coverage,
+            "learning_outcomes": learning_outcomes,
+            "insights": insights,
+            "suggestions": suggestions,
+            "detailed_analysis": detailed_analysis
+        }
+        
+    except Exception as e:
+        print(f"Error generating papers summary: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to generate papers summary: {str(e)}"
+        )
+
+
+@router.get("/approved-papers-subjects")
+async def get_approved_papers_subjects(
+    current_user: dict = Depends(require_teacher)
+):
+    """Get list of unique subjects from approved papers"""
+    db = get_database()
+    
+    # Find all approved papers for this teacher
+    papers = await db.papers.find({
+        "teacher_id": current_user["user_id"],
+        "status": "approved"
+    }).to_list(length=None)
+    
+    # Extract unique subjects
+    subjects = sorted(list(set(paper.get("subject", "") for paper in papers if paper.get("subject"))))
+    
+    return {
+        "subjects": subjects
+    }
 
 
 @router.post("/upload-resource")
@@ -100,9 +433,13 @@ async def upload_resource(
     except Exception as e:
         upload_time = time.time() - upload_start
         print(f"   ❌ Upload failed after {upload_time:.2f} seconds")
+        print(f"   Error details: {str(e)}")
+        print(f"   Error type: {type(e).__name__}")
+        
+        # Re-raise with better error message
         raise HTTPException(
             status_code=500, 
-            detail=f"Failed to upload to Cloudinary: {str(e)}"
+            detail=f"Failed to upload file to Cloudinary: {str(e)}. Check your Cloudinary credentials and network connection."
         )
     
     # Parse file to extract text and topics (can be done async after upload)
@@ -512,20 +849,6 @@ IMPORTANT:
                 }
             }
         )
-        
-        # Get user info for email
-        user = await db.users.find_one({"_id": ObjectId(current_user["user_id"])})
-        
-        # Send notification email
-        try:
-            await mail_service.send_paper_generated_notification(
-                user["email"],
-                user["full_name"],
-                request.subject,
-                paper_id
-            )
-        except Exception as e:
-            print(f"Failed to send email: {e}")
         
         return {
             "paper_id": paper_id,
@@ -1032,17 +1355,83 @@ async def search_approved_papers(
     current_user: dict = Depends(require_teacher)
 ):
     """Search approved papers by subject and department (only user's own papers)"""
-    db = get_database()
-    
-    # Build query - FILTER BY CURRENT USER
-    query = {
-        "status": "approved",
-        "teacher_id": current_user["user_id"]  # Only show user's own papers
-    }
-    
-    # Add subject filter if provided
-    if subject:
-        query["subject"] = {"$regex": subject, "$options": "i"}
+    try:
+        db = get_database()
+        
+        print(f"\n🔍 Searching approved papers for teacher {current_user['user_id']}")
+        print(f"   Subject filter: {subject}")
+        print(f"   Department filter: {department}")
+        
+        # Build query
+        query = {
+            "status": "approved",
+            "teacher_id": str(current_user["user_id"])  # Ensure we filter by teacher
+        }
+        
+        # Add filters if provided (with case-insensitive search)
+        if subject:
+            query["subject"] = {"$regex": subject, "$options": "i"}
+        if department:
+            query["department"] = {"$regex": department, "$options": "i"}
+            
+        # Fetch papers
+        papers_cursor = db.papers.find(query).sort("created_at", -1)
+        papers = await papers_cursor.to_list(length=None)
+        
+        # Transform for response
+        response_papers = []
+        for paper in papers:
+            # Convert ObjectId to string
+            paper["id"] = str(paper["_id"])
+            del paper["_id"]
+            
+            response_papers.append({
+                "id": paper["id"],
+                "subject": paper.get("subject", ""),
+                "department": paper.get("department", ""),
+                "total_marks": paper.get("total_marks", 0),
+                "question_count": len(paper.get("questions", [])),
+                "section": paper.get("section"),
+                "year": paper.get("year"),
+                "created_at": paper.get("created_at", ""),
+                "question_paper_pdf": paper.get("question_paper_pdf"),
+                "answer_key_pdf": paper.get("answer_key_pdf")
+            })
+            
+        print(f"   📝 Found {len(response_papers)} approved papers")
+        return response_papers
+        
+    except Exception as e:
+        print(f"   ❌ Error fetching approved papers: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to fetch approved papers: {str(e)}"
+        )
+        for paper in papers:
+            response_papers.append({
+                "id": str(paper["_id"]),
+                "subject": paper["subject"],
+                "department": paper["department"],
+                "section": paper.get("section"),
+                "year": paper.get("year"),
+                "exam_date": paper.get("exam_date"),
+                "total_marks": paper["total_marks"],
+                "question_count": len(paper.get("questions", [])),
+                "status": paper["status"],
+                "created_at": paper["created_at"],
+                "teacher_id": paper["teacher_id"],
+                "question_paper_pdf": paper.get("question_paper_pdf"),
+                "answer_key_pdf": paper.get("answer_key_pdf")
+            })
+        
+        return response_papers
+        
+    except Exception as e:
+        print(f"   ❌ Error searching papers: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to search approved papers: {str(e)}"
+        )
     
     # Add department filter if provided
     if department:
@@ -1236,3 +1625,55 @@ async def create_paper_copy_for_edit(
         "original_paper_id": paper_id,
         "message": "Paper copy created for editing. Original paper preserved."
     }
+
+
+@router.get("/paper-suggestions/{paper_id}")
+async def get_paper_suggestions(
+    paper_id: str,
+    current_user: dict = Depends(require_teacher)
+):
+    """Get AI-powered suggestions for future paper generation based on current paper"""
+    db = get_database()
+
+    # Get paper and verify ownership
+    paper = await db.papers.find_one({
+        "_id": ObjectId(paper_id),
+        "teacher_id": current_user["user_id"]
+    })
+
+    if not paper:
+        raise HTTPException(status_code=404, detail="Paper not found")
+
+    try:
+        # Initialize advanced paper generator service for suggestions
+        generator = AdvancedPaperGenerator()
+        
+        # Generate suggestions based on paper analysis
+        suggestions = await generator.generate_paper_suggestions(paper)
+        
+        return {
+            "paper_id": str(paper["_id"]),
+            "generated_at": datetime.utcnow().isoformat(),
+            "suggestions": suggestions
+        }
+        return suggestions_data
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to generate suggestions: {str(e)}")
+
+
+@router.get("/dashboard-summary")
+async def get_dashboard_summary(
+    current_user: dict = Depends(require_teacher)
+):
+    """Get comprehensive dashboard summary with AI insights"""
+    db = get_database()
+
+    # Initialize summarizer service
+    summarizer = SummarizerService()
+
+    try:
+        summary_data = summarizer.get_dashboard_summary_data(current_user["user_id"], db)
+        return summary_data
+    except Exception as e:
+        print(f"Dashboard summary error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate dashboard summary: {str(e)}")

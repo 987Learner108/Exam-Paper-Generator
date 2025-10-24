@@ -9,6 +9,7 @@ from datetime import datetime
 import json
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.prompts import ChatPromptTemplate
+from langchain.schema import HumanMessage
 from app.core.config import settings
 from app.core.database import get_database
 
@@ -467,6 +468,75 @@ Generate the questions now. Return ONLY the JSON array, no other text.""")
                 distribution["New"] += 1
         
         return distribution
+
+    async def generate_paper_suggestions(self, paper: Dict) -> str:
+        """
+        Generate suggestions for future papers based on analyzing the current paper
+        
+        Args:
+            paper: Dictionary containing the paper data from MongoDB
+            
+        Returns:
+            String containing AI-generated suggestions
+        """
+        self._ensure_llm()
+        
+        # Extract paper details
+        subject = paper.get("subject", "")
+        questions = paper.get("questions", [])
+        department = paper.get("department", "")
+        total_marks = paper.get("total_marks", 0)
+        
+        # Analyze question distribution
+        question_types = {}
+        blooms_levels = {}
+        marks_distribution = []
+        
+        for q in questions:
+            q_type = q.get("question_type", "Unknown")
+            blooms = q.get("blooms_level", "Unknown")
+            marks = q.get("marks", 0)
+            
+            question_types[q_type] = question_types.get(q_type, 0) + 1
+            blooms_levels[blooms] = blooms_levels.get(blooms, 0) + 1
+            marks_distribution.append(marks)
+        
+        # Create suggestions prompt
+        prompt = HumanMessage(content=f"""
+        As an expert exam paper analyzer, analyze this paper and provide suggestions for future improvements:
+
+        Subject: {subject}
+        Department: {department}
+        Total Marks: {total_marks}
+
+        Current Distribution:
+        Question Types: {json.dumps(question_types)}
+        Bloom's Taxonomy Levels: {json.dumps(blooms_levels)}
+        Marks Distribution: {marks_distribution}
+
+        Please provide detailed suggestions covering:
+        1. Question Type Balance - Are the question types well distributed?
+        2. Cognitive Level Distribution - Is there good coverage across Bloom's levels?
+        3. Marks Allocation - Is the marking scheme appropriate?
+        4. Topic Coverage - Are key topics adequately covered?
+        5. Innovation Opportunities - How can future papers be more engaging?
+        6. Time Management Considerations - Is the paper well-timed?
+
+        Format your response in clear sections with bullet points and specific examples where possible.
+        Focus on actionable suggestions that would improve the quality of future papers.
+        """)
+        
+        try:
+            # Get suggestions from LLM
+            result = await self.llm.ainvoke([prompt])
+            suggestions = result.content
+            
+            print(f"\n✨ Generated suggestions for paper")
+            return suggestions
+            
+        except Exception as e:
+            print(f"Error generating suggestions: {e}")
+            return "Failed to generate suggestions. Please try again later."
 
 
 # Global instance
