@@ -3,12 +3,14 @@ services:
     name: exam-paper-generator-backend
     env: python
     buildCommand: |
+      python --version
       python -m pip install --upgrade pip
       pip install --no-cache-dir -r requirements.txt
+      pip install uvicorn
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
     envVars:
       - key: PYTHON_VERSION
-        value: 3.9.16
+        value: 3.10.9
       - key: MONGODB_URI
         fromDatabase:
           name: mongodb
